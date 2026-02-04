@@ -10,28 +10,82 @@ export const useDbStore = defineStore('db', () => {
   const sqlJsDb = ref(null) // Web 平台使用
   const isInitialized = ref(false)
   const isWebPlatform = ref(false)
-  const dbUrl = 'https://cdn.jsdelivr.net/gh/sky2048/photo-app@master/photo.db'
+  const downloadProgress = ref(0) // 下载进度
+  const downloadError = ref(null) // 下载错误信息
+  const debugLog = ref([]) // 调试日志
+  
+  // 添加调试日志
+  function addLog(message) {
+    const timestamp = new Date().toLocaleTimeString()
+    const logMessage = `[${timestamp}] ${message}`
+    debugLog.value.push(logMessage)
+    console.log(message)
+    
+    // 只保留最后 30 条
+    if (debugLog.value.length > 30) {
+      debugLog.value.shift()
+    }
+  }
+  
+  // 多个备用 CDN 地址
+  const dbUrls = [
+    'https://cdn.jsdelivr.net/gh/sky2048/photo-app@master/photo.db',
+    'https://raw.githubusercontent.com/sky2048/photo-app/master/photo.db',
+    'https://ghproxy.com/https://raw.githubusercontent.com/sky2048/photo-app/master/photo.db'
+  ]
   
   
   // 初始化数据库
   async function initDatabase() {
     try {
+      addLog('=== 开始初始化数据库 ===')
+      addLog('平台: ' + Capacitor.getPlatform())
+      addLog('是否原生: ' + Capacitor.isNativePlatform())
+      
       if (Capacitor.isNativePlatform()) {
         // 原生平台（iOS/Android）- 使用 Capacitor SQLite
         isWebPlatform.value = false
+        addLog('使用 Capacitor SQLite')
+        
         const sqlite = new SQLiteConnection(CapacitorSQLite)
+        addLog('SQLite 连接对象创建成功')
         
-        // 检查数据库是否存在
-        const dbExists = await checkDatabaseExists()
+        // 检查连接列表中是否已存在
+        addLog('检查连接一致性...')
+        const ret = await sqlite.checkConnectionsConsistency()
+        addLog('一致性: ' + JSON.stringify(ret))
         
-        if (!dbExists) {
-          console.log('数据库不存在，开始下载...')
-          await downloadDatabase()
+        addLog('检查连接是否存在...')
+        const isConn = (await sqlite.isConnection('photo', false)).result
+        addLog('连接存在: ' + isConn)
+        
+        if (ret.result && isConn) {
+          // 数据库连接已存在，直接获取
+          addLog('恢复现有连接...')
+          db.value = await sqlite.retrieveConnection('photo', false)
+          addLog('连接恢复成功')
+        } else {
+          // 检查数据库文件是否存在
+          addLog('检查数据库文件...')
+          const dbExists = await checkDatabaseExists()
+          addLog('数据库存在: ' + dbExists)
+          
+          if (!dbExists) {
+            addLog('开始下载数据库...')
+            await downloadDatabase()
+            addLog('下载完成')
+          }
+          
+          // 创建新连接
+          addLog('创建数据库连接...')
+          db.value = await sqlite.createConnection('photo', false, 'no-encryption', 1, false)
+          addLog('连接创建成功')
         }
         
         // 打开数据库
-        db.value = await sqlite.createConnection('photo.db', false, 'no-encryption', 1, false)
+        addLog('打开数据库...')
         await db.value.open()
+        addLog('数据库打开成功')
         
       } else {
         // Web 平台 - 使用 sql.js
@@ -68,74 +122,206 @@ export const useDbStore = defineStore('db', () => {
   // 检查数据库是否存在
   async function checkDatabaseExists() {
     try {
-      const result = await Filesystem.stat({
-        path: 'photo.db',
-        directory: Directory.Data
-      })
-      return result !== null
-    } catch {
+      // 使用 SQLite 插件的方法检查数据库
+      const sqlite = new SQLiteConnection(CapacitorSQLite)
+      const dbList = await sqlite.getDatabaseList()
+      console.log('现有数据库列表:', dbList.values)
+      return dbList.values && dbList.values.includes('photo')
+    } catch (error) {
+      console.log('检查数据库失败:', error)
       return false
     }
   }
   
-  // 从 GitHub 下载数据库（Web 平台）
+  // 从 GitHub 下载数据库（Web 平台）- 带进度和重试
   async function downloadDatabaseWeb() {
-    try {
-      console.log('正在从 GitHub 下载数据库...')
-      
-      const response = await fetch(dbUrl)
-      if (!response.ok) {
-        throw new Error('下载失败: ' + response.statusText)
+    downloadProgress.value = 0
+    downloadError.value = null
+    
+    // 尝试所有 CDN 地址
+    for (let i = 0; i < dbUrls.length; i++) {
+      try {
+        console.log(`尝试从 CDN ${i + 1} 下载数据库...`)
+        
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 30000) // 30秒超时
+        
+        const response = await fetch(dbUrls[i], {
+          signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+        
+        // 获取文件大小
+        const contentLength = response.headers.get('content-length')
+        const total = parseInt(contentLength, 10)
+        
+        // 使用流式读取以显示进度
+        const reader = response.body.getReader()
+        const chunks = []
+        let receivedLength = 0
+        
+        while (true) {
+          const { done, value } = await reader.read()
+          
+          if (done) break
+          
+          chunks.push(value)
+          receivedLength += value.length
+          
+          if (total) {
+            downloadProgress.value = Math.round((receivedLength / total) * 100)
+          }
+        }
+        
+        // 合并所有块
+        const arrayBuffer = new Uint8Array(receivedLength)
+        let position = 0
+        for (const chunk of chunks) {
+          arrayBuffer.set(chunk, position)
+          position += chunk.length
+        }
+        
+        // 初始化数据库
+        const SQL = await initSqlJs({
+          locateFile: file => `https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/${file}`
+        })
+        sqlJsDb.value = new SQL.Database(arrayBuffer)
+        
+        // 保存到 localStorage
+        const base64 = uint8ArrayToBase64(arrayBuffer)
+        localStorage.setItem('photo_db', base64)
+        
+        downloadProgress.value = 100
+        console.log('数据库下载完成')
+        return
+        
+      } catch (error) {
+        console.error(`CDN ${i + 1} 下载失败:`, error)
+        downloadError.value = error.message
+        
+        // 如果不是最后一个 URL，继续尝试下一个
+        if (i < dbUrls.length - 1) {
+          console.log('尝试下一个 CDN...')
+          continue
+        }
+        
+        // 所有 CDN 都失败了
+        throw new Error('所有下载源均失败，请检查网络连接')
       }
-      
-      const arrayBuffer = await response.arrayBuffer()
-      const uint8Array = new Uint8Array(arrayBuffer)
-      
-      // 初始化数据库 - 使用国内 CDN 加速
-      const SQL = await initSqlJs({
-        locateFile: file => `https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/${file}`
-      })
-      sqlJsDb.value = new SQL.Database(uint8Array)
-      
-      // 保存到 localStorage
-      const base64 = uint8ArrayToBase64(uint8Array)
-      localStorage.setItem('photo_db', base64)
-      
-      console.log('数据库下载完成')
-      
-    } catch (error) {
-      console.error('下载数据库失败:', error)
-      throw error
     }
   }
   
-  // 从 GitHub 下载数据库（原生平台）
+  // 从 GitHub 下载数据库（原生平台）- 带进度和重试
   async function downloadDatabase() {
-    try {
-      console.log('正在从 GitHub 下载数据库...')
-      
-      // 下载文件
-      const response = await fetch(dbUrl)
-      if (!response.ok) {
-        throw new Error('下载失败: ' + response.statusText)
+    downloadProgress.value = 0
+    downloadError.value = null
+    
+    // 尝试所有 CDN 地址
+    for (let i = 0; i < dbUrls.length; i++) {
+      try {
+        console.log(`尝试从 CDN ${i + 1} 下载数据库...`)
+        
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 30000) // 30秒超时
+        
+        const response = await fetch(dbUrls[i], {
+          signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+        
+        // 获取文件大小
+        const contentLength = response.headers.get('content-length')
+        const total = parseInt(contentLength, 10)
+        console.log('数据库文件大小:', total, 'bytes')
+        
+        // 使用流式读取以显示进度
+        const reader = response.body.getReader()
+        const chunks = []
+        let receivedLength = 0
+        
+        while (true) {
+          const { done, value } = await reader.read()
+          
+          if (done) break
+          
+          chunks.push(value)
+          receivedLength += value.length
+          
+          if (total) {
+            downloadProgress.value = Math.round((receivedLength / total) * 100)
+            console.log('下载进度:', downloadProgress.value + '%')
+          }
+        }
+        
+        // 合并所有块
+        const arrayBuffer = new Uint8Array(receivedLength)
+        let position = 0
+        for (const chunk of chunks) {
+          arrayBuffer.set(chunk, position)
+          position += chunk.length
+        }
+        
+        console.log('数据下载完成，总大小:', receivedLength, 'bytes')
+        
+        const base64Data = arrayBufferToBase64(arrayBuffer.buffer)
+        console.log('Base64 转换完成，长度:', base64Data.length)
+        
+        // 保存到 SQLite 数据库目录
+        // 注意：数据库名称不要带 .db 后缀
+        const dbName = 'photo'
+        
+        // 先尝试删除旧数据库
+        const sqlite = new SQLiteConnection(CapacitorSQLite)
+        try {
+          const dbList = await sqlite.getDatabaseList()
+          console.log('现有数据库:', dbList.values)
+          if (dbList.values && dbList.values.includes(dbName)) {
+            console.log('删除旧数据库...')
+            await sqlite.closeConnection(dbName, false)
+            await CapacitorSQLite.deleteDatabase({ database: dbName })
+          }
+        } catch (e) {
+          console.log('清理旧数据库时出错（可忽略）:', e.message)
+        }
+        
+        // 使用 createSyncTable 方法创建数据库
+        console.log('开始创建数据库...')
+        await CapacitorSQLite.createSyncTable()
+        
+        // 保存数据库文件
+        console.log('保存数据库文件...')
+        await Filesystem.writeFile({
+          path: `SQLite/${dbName}SQLite.db`,
+          data: base64Data,
+          directory: Directory.Data,
+          recursive: true
+        })
+        
+        downloadProgress.value = 100
+        console.log('数据库保存完成')
+        return
+        
+      } catch (error) {
+        console.error(`CDN ${i + 1} 失败:`, error)
+        downloadError.value = error.message
+        
+        // 如果不是最后一个 URL，继续尝试下一个
+        if (i < dbUrls.length - 1) {
+          console.log('尝试下一个 CDN...')
+          continue
+        }
+        
+        // 所有 CDN 都失败了
+        throw new Error('所有下载源均失败: ' + error.message)
       }
-      
-      const blob = await response.blob()
-      const arrayBuffer = await blob.arrayBuffer()
-      const base64Data = arrayBufferToBase64(arrayBuffer)
-      
-      // 保存到本地
-      await Filesystem.writeFile({
-        path: 'photo.db',
-        data: base64Data,
-        directory: Directory.Data
-      })
-      
-      console.log('数据库下载完成')
-      
-    } catch (error) {
-      console.error('下载数据库失败:', error)
-      throw error
     }
   }
   
@@ -443,6 +629,9 @@ export const useDbStore = defineStore('db', () => {
   return {
     db,
     isInitialized,
+    downloadProgress,
+    downloadError,
+    debugLog,
     initDatabase,
     updateDatabase,
     getCategories,
