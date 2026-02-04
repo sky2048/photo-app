@@ -12,6 +12,7 @@ export const useDbStore = defineStore('db', () => {
   const isWebPlatform = ref(false)
   const dbUrl = 'https://raw.githubusercontent.com/sky2048/photo-app/master/photo.db'
   
+  
   // 初始化数据库
   async function initDatabase() {
     try {
