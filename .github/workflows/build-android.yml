@@ -36,7 +36,11 @@ jobs:
       working-directory: photo-app/photo-viewer
       run: npm run build
       
-    - name: Install Capacitor CLI
+    - name: Add Android platform
+      working-directory: photo-app/photo-viewer
+      run: npx cap add android
+      
+    - name: Sync Capacitor
       working-directory: photo-app/photo-viewer
       run: npx cap sync android
       
