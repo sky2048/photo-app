@@ -38,9 +38,9 @@ export const useDbStore = defineStore('db', () => {
         isWebPlatform.value = true
         console.log('Web 平台，使用 sql.js')
         
-        // 初始化 sql.js
+        // 初始化 sql.js - 使用国内 CDN 加速
         const SQL = await initSqlJs({
-          locateFile: file => `https://sql.js.org/dist/${file}`
+          locateFile: file => `https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/${file}`
         })
         
         // 尝试从 localStorage 加载数据库
@@ -91,9 +91,9 @@ export const useDbStore = defineStore('db', () => {
       const arrayBuffer = await response.arrayBuffer()
       const uint8Array = new Uint8Array(arrayBuffer)
       
-      // 初始化数据库
+      // 初始化数据库 - 使用国内 CDN 加速
       const SQL = await initSqlJs({
-        locateFile: file => `https://sql.js.org/dist/${file}`
+        locateFile: file => `https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/${file}`
       })
       sqlJsDb.value = new SQL.Database(uint8Array)
       
