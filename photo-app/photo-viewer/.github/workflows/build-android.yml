@@ -38,9 +38,11 @@ jobs:
       
     - name: Add Android platform
       working-directory: photo-app/photo-viewer
-      run: |
-        npx cap add android
-        npx cap sync android
+      run: npx cap add android
+      
+    - name: Sync Capacitor
+      working-directory: photo-app/photo-viewer
+      run: npx cap sync android
       
     - name: Build Android APK
       working-directory: photo-app/photo-viewer/android

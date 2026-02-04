@@ -35,11 +35,13 @@ jobs:
       working-directory: photo-app/photo-viewer
       run: npm run build
       
-    - name: Add Android platform and sync
+    - name: Add Android platform
       working-directory: photo-app/photo-viewer
-      run: |
-        npx cap add android
-        npx cap sync android
+      run: npx cap add android
+      
+    - name: Sync Capacitor
+      working-directory: photo-app/photo-viewer
+      run: npx cap sync android
       
     - name: Decode Keystore
       if: ${{ secrets.KEYSTORE_BASE64 != '' }}
