@@ -1,0 +1,14 @@
+{
+  "appId": "com.photoviewer.app",
+  "appName": "写真图库",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "CapacitorSQLite": {
+      "iosDatabaseLocation": "Library/CapacitorDatabase",
+      "androidIsEncryption": false
+    }
+  }
+}

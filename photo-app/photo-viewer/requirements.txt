@@ -1,0 +1,8 @@
+# 查看器项目依赖
+
+# Web 框架
+Flask==3.0.0
+Flask-CORS==4.0.0
+
+# GUI 图片处理
+Pillow==10.1.0

@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>爬虫管理界面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .control-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .form-group select,
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group select:focus,
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            cursor: pointer;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
+        }
+
+        .status-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .status-box.running {
+            border-left-color: #28a745;
+            background: #d4edda;
+        }
+
+        .status-box.error {
+            border-left-color: #dc3545;
+            background: #f8d7da;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .status-item:last-child {
+            border-bottom: none;
+        }
+
+        .status-label {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .status-value {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            opacity: 0.9;
+            font-size: 0.9em;
+        }
+
+        .log-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-item {
+            padding: 10px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-item:last-child {
+            border-bottom: none;
+        }
+
+        .log-date {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .log-category {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .log-count {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.9em;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🕷️ 爬虫管理界面</h1>
+            <p>轻松管理你的数据爬取任务</p>
+        </div>
+
+        <!-- 控制面板 -->
+        <div class="card">
+            <h2>⚙️ 控制面板</h2>
+            <div class="control-panel">
+                <div class="form-group">
+                    <label for="category">选择分类</label>
+                    <select id="category">
+                        <option value="">全部分类</option>
+                        <option value="1">无圣光</option>
+                        <option value="2">凸凹图</option>
+                        <option value="3">靓人体</option>
+                        <option value="4">写真集</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="maxPages">最大页数</label>
+                    <input type="number" id="maxPages" value="5" min="1" max="100">
+                </div>
+                <div class="form-group">
+                    <label>选项</label>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="skipExisting" checked>
+                        <label for="skipExisting">跳过已存在的文章</label>
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-primary" id="startBtn" onclick="startScrape()">
+                    <span>▶️ 开始爬取</span>
+                </button>
+                <button class="btn btn-danger" id="stopBtn" onclick="stopScrape()" disabled>
+                    <span>⏹️ 停止</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 状态显示 -->
+        <div class="card">
+            <h2>📊 爬取状态</h2>
+            <div id="statusBox" class="status-box">
+                <div class="status-item">
+                    <span class="status-label">状态</span>
+                    <span class="status-value" id="statusText">就绪</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">进度</span>
+                    <span class="status-value" id="progressText">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">当前分类</span>
+                    <span class="status-value" id="currentCategory">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">当前页数</span>
+                    <span class="status-value" id="currentPage">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">已爬取文章</span>
+                    <span class="status-value" id="totalArticles">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 数据库统计 -->
+        <div class="card">
+            <h2>📈 数据库统计</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3 id="dbTotalArticles">0</h3>
+                    <p>总文章数</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="dbTotalImages">0</h3>
+                    <p>总图片数</p>
+                </div>
+            </div>
+            <div id="categoryStats"></div>
+        </div>
+
+        <!-- 爬取日志 -->
+        <div class="card">
+            <h2>📝 最近爬取记录</h2>
+            <div class="log-list" id="logList">
+                <p style="text-align: center; color: #999; padding: 20px;">暂无记录</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let updateInterval = null;
+
+        // 页面加载时更新状态
+        window.onload = function() {
+            updateStatus();
+            // 每2秒更新一次状态
+            updateInterval = setInterval(updateStatus, 2000);
+        };
+
+        // 更新状态
+        async function updateStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const status = data.scrape_status;
+                    const stats = data.db_stats;
+                    
+                    // 更新爬取状态
+                    document.getElementById('statusText').textContent = 
+                        status.is_running ? '运行中' : '就绪';
+                    document.getElementById('progressText').textContent = 
+                        status.progress || '-';
+                    document.getElementById('currentCategory').textContent = 
+                        status.current_category || '-';
+                    document.getElementById('currentPage').textContent = 
+                        status.current_page || '-';
+                    document.getElementById('totalArticles').textContent = 
+                        status.total_articles || 0;
+                    
+                    // 更新状态框样式
+                    const statusBox = document.getElementById('statusBox');
+                    statusBox.className = 'status-box';
+                    if (status.is_running) {
+                        statusBox.classList.add('running');
+                    }
+                    if (status.progress && status.progress.includes('错误')) {
+                        statusBox.classList.add('error');
+                    }
+                    
+                    // 更新按钮状态
+                    document.getElementById('startBtn').disabled = status.is_running;
+                    document.getElementById('stopBtn').disabled = !status.is_running;
+                    
+                    // 更新数据库统计
+                    document.getElementById('dbTotalArticles').textContent = 
+                        stats.total_articles || 0;
+                    document.getElementById('dbTotalImages').textContent = 
+                        stats.total_images || 0;
+                    
+                    // 更新分类统计
+                    if (stats.category_stats) {
+                        let html = '<div class="status-box"><h3 style="margin-bottom: 10px;">分类统计</h3>';
+                        for (const [category, count] of Object.entries(stats.category_stats)) {
+                            html += `
+                                <div class="status-item">
+                                    <span class="status-label">${category || '未分类'}</span>
+                                    <span class="status-value">${count} 篇</span>
+                                </div>
+                            `;
+                        }
+                        html += '</div>';
+                        document.getElementById('categoryStats').innerHTML = html;
+                    }
+                    
+                    // 更新日志
+                    if (stats.recent_logs && stats.recent_logs.length > 0) {
+                        let html = '';
+                        stats.recent_logs.forEach(log => {
+                            html += `
+                                <div class="log-item">
+                                    <span class="log-date">${log.date}</span>
+                                    <span class="log-category">${log.category}</span>
+                                    <span class="log-count">${log.count} 篇</span>
+                                </div>
+                            `;
+                        });
+                        document.getElementById('logList').innerHTML = html;
+                    }
+                }
+            } catch (error) {
+                console.error('更新状态失败:', error);
+            }
+        }
+
+        // 开始爬取
+        async function startScrape() {
+            const category = document.getElementById('category').value;
+            const maxPages = parseInt(document.getElementById('maxPages').value);
+            const skipExisting = document.getElementById('skipExisting').checked;
+            
+            try {
+                const response = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        category: category,
+                        max_pages: maxPages,
+                        skip_existing: skipExisting
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    alert('爬虫已启动！');
+                } else {
+                    alert('启动失败: ' + data.message);
+                }
+            } catch (error) {
+                alert('启动失败: ' + error.message);
+            }
+        }
+
+        // 停止爬取
+        async function stopScrape() {
+            if (!confirm('确定要停止爬取吗？')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/stop', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    alert('正在停止爬虫...');
+                } else {
+                    alert('停止失败: ' + data.message);
+                }
+            } catch (error) {
+                alert('停止失败: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
