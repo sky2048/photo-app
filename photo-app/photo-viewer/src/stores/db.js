@@ -87,6 +87,15 @@ export const useDbStore = defineStore('db', () => {
         await db.value.open()
         addLog('数据库打开成功')
         
+        // 测试查询
+        try {
+          addLog('测试查询数据库...')
+          const testResult = await db.value.query('SELECT COUNT(*) as total FROM articles')
+          addLog('测试查询结果: ' + JSON.stringify(testResult))
+        } catch (testError) {
+          addLog('测试查询失败: ' + testError.message)
+        }
+        
       } else {
         // Web 平台 - 使用 sql.js
         isWebPlatform.value = true
@@ -367,17 +376,35 @@ export const useDbStore = defineStore('db', () => {
         return []
       }
     } else {
-      if (!db.value) return []
+      if (!db.value) {
+        addLog('数据库未初始化')
+        return []
+      }
       
       try {
+        addLog('查询分类列表...')
         const result = await db.value.query(`
           SELECT category, COUNT(*) as count 
           FROM articles 
           GROUP BY category
         `)
         
-        return result.values || []
+        addLog('分类查询结果: ' + JSON.stringify(result))
+        
+        // Capacitor SQLite 返回的数据结构
+        if (result.values && result.values.length > 0) {
+          const categories = result.values.map(row => ({
+            category: row[0] || row.category,
+            count: row[1] || row.count
+          }))
+          addLog('找到 ' + categories.length + ' 个分类')
+          return categories
+        }
+        
+        addLog('未找到分类数据')
+        return []
       } catch (error) {
+        addLog('获取分类失败: ' + error.message)
         console.error('获取分类失败:', error)
         return []
       }
@@ -417,7 +444,10 @@ export const useDbStore = defineStore('db', () => {
         return []
       }
     } else {
-      if (!db.value) return []
+      if (!db.value) {
+        addLog('数据库未初始化')
+        return []
+      }
       
       try {
         let query = 'SELECT * FROM articles'
@@ -431,9 +461,20 @@ export const useDbStore = defineStore('db', () => {
         query += ' ORDER BY id DESC LIMIT ? OFFSET ?'
         params.push(limit, offset)
         
+        addLog('查询文章: ' + query)
         const result = await db.value.query(query, params)
-        return result.values || []
+        addLog('文章查询结果: ' + JSON.stringify(result))
+        
+        // 处理返回的数据
+        if (result.values && result.values.length > 0) {
+          addLog('找到 ' + result.values.length + ' 篇文章')
+          return result.values
+        }
+        
+        addLog('未找到文章')
+        return []
       } catch (error) {
+        addLog('获取文章失败: ' + error.message)
         console.error('获取文章失败:', error)
         return []
       }

@@ -153,7 +153,7 @@ function updateTime() {
 }
 
 const dbUrl = computed(() => {
-  return 'https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/photo.db'
+  return 'https://cdn.jsdelivr.net/gh/sky2048/photo-app@master/photo.db'
 })
 
 async function handleUpdateDb() {
