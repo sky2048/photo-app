@@ -119,16 +119,19 @@ export const useDbStore = defineStore('db', () => {
     }
   }
   
-  // 检查数据库是否存在
+  // 检查数据库是否存在 - 简化版本，避免触发 createSyncTable 错误
   async function checkDatabaseExists() {
     try {
-      // 使用 SQLite 插件的方法检查数据库
-      const sqlite = new SQLiteConnection(CapacitorSQLite)
-      const dbList = await sqlite.getDatabaseList()
-      console.log('现有数据库列表:', dbList.values)
-      return dbList.values && dbList.values.includes('photo')
+      addLog('使用文件系统检查数据库...')
+      // 直接检查文件是否存在，不使用 getDatabaseList
+      const result = await Filesystem.stat({
+        path: 'databases/photo.db',
+        directory: Directory.Data
+      })
+      addLog('数据库文件存在')
+      return true
     } catch (error) {
-      console.log('检查数据库失败:', error)
+      addLog('数据库文件不存在: ' + error.message)
       return false
     }
   }
@@ -215,18 +218,20 @@ export const useDbStore = defineStore('db', () => {
     }
   }
   
-  // 从 GitHub 下载数据库（原生平台）- 带进度和重试
+  // 从 GitHub 下载数据库（原生平台）- 修复版本
   async function downloadDatabase() {
     downloadProgress.value = 0
     downloadError.value = null
     
+    const dbName = 'photo'
+    
     // 尝试所有 CDN 地址
     for (let i = 0; i < dbUrls.length; i++) {
       try {
-        console.log(`尝试从 CDN ${i + 1} 下载数据库...`)
+        addLog(`尝试 CDN ${i + 1}...`)
         
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 30000) // 30秒超时
+        const timeoutId = setTimeout(() => controller.abort(), 30000)
         
         const response = await fetch(dbUrls[i], {
           signal: controller.signal
@@ -234,22 +239,20 @@ export const useDbStore = defineStore('db', () => {
         clearTimeout(timeoutId)
         
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          throw new Error(`HTTP ${response.status}`)
         }
         
-        // 获取文件大小
+        addLog('开始接收数据...')
         const contentLength = response.headers.get('content-length')
         const total = parseInt(contentLength, 10)
-        console.log('数据库文件大小:', total, 'bytes')
         
-        // 使用流式读取以显示进度
+        // 流式读取
         const reader = response.body.getReader()
         const chunks = []
         let receivedLength = 0
         
         while (true) {
           const { done, value } = await reader.read()
-          
           if (done) break
           
           chunks.push(value)
@@ -257,11 +260,10 @@ export const useDbStore = defineStore('db', () => {
           
           if (total) {
             downloadProgress.value = Math.round((receivedLength / total) * 100)
-            console.log('下载进度:', downloadProgress.value + '%')
           }
         }
         
-        // 合并所有块
+        // 合并数据
         const arrayBuffer = new Uint8Array(receivedLength)
         let position = 0
         for (const chunk of chunks) {
@@ -269,57 +271,45 @@ export const useDbStore = defineStore('db', () => {
           position += chunk.length
         }
         
-        console.log('数据下载完成，总大小:', receivedLength, 'bytes')
+        addLog(`下载完成: ${receivedLength} bytes`)
         
         const base64Data = arrayBufferToBase64(arrayBuffer.buffer)
-        console.log('Base64 转换完成，长度:', base64Data.length)
+        addLog('Base64 转换完成')
         
-        // 保存到 SQLite 数据库目录
-        // 注意：数据库名称不要带 .db 后缀
-        const dbName = 'photo'
+        // 保存数据库文件到正确的位置
+        addLog('保存数据库文件...')
         
-        // 先尝试删除旧数据库
-        const sqlite = new SQLiteConnection(CapacitorSQLite)
+        // 确保目录存在
         try {
-          const dbList = await sqlite.getDatabaseList()
-          console.log('现有数据库:', dbList.values)
-          if (dbList.values && dbList.values.includes(dbName)) {
-            console.log('删除旧数据库...')
-            await sqlite.closeConnection(dbName, false)
-            await CapacitorSQLite.deleteDatabase({ database: dbName })
-          }
+          await Filesystem.mkdir({
+            path: 'databases',
+            directory: Directory.Data,
+            recursive: true
+          })
         } catch (e) {
-          console.log('清理旧数据库时出错（可忽略）:', e.message)
+          // 目录可能已存在，忽略错误
         }
         
-        // 使用 createSyncTable 方法创建数据库
-        console.log('开始创建数据库...')
-        await CapacitorSQLite.createSyncTable()
-        
-        // 保存数据库文件
-        console.log('保存数据库文件...')
+        // 保存文件
         await Filesystem.writeFile({
-          path: `SQLite/${dbName}SQLite.db`,
+          path: `databases/${dbName}.db`,
           data: base64Data,
-          directory: Directory.Data,
-          recursive: true
+          directory: Directory.Data
         })
         
+        addLog('数据库文件保存成功')
         downloadProgress.value = 100
-        console.log('数据库保存完成')
         return
         
       } catch (error) {
-        console.error(`CDN ${i + 1} 失败:`, error)
+        addLog(`CDN ${i + 1} 失败: ${error.message}`)
         downloadError.value = error.message
         
-        // 如果不是最后一个 URL，继续尝试下一个
         if (i < dbUrls.length - 1) {
-          console.log('尝试下一个 CDN...')
+          addLog('尝试下一个源...')
           continue
         }
         
-        // 所有 CDN 都失败了
         throw new Error('所有下载源均失败: ' + error.message)
       }
     }
