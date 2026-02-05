@@ -134,13 +134,13 @@ export const useDbStore = defineStore('db', () => {
     }
   }
   
-  // 检查数据库是否存在 - 简化版本
+  // 检查数据库是否存在
   async function checkDatabaseExists() {
     try {
       addLog('检查数据库文件...')
-      // 直接检查文件是否存在
+      // 检查 databases 目录下的文件
       const result = await Filesystem.stat({
-        path: 'photo.db',
+        path: 'databases/photo.db',
         directory: Directory.Data
       })
       addLog('数据库文件存在')
@@ -274,10 +274,37 @@ export const useDbStore = defineStore('db', () => {
         const base64Data = arrayBufferToBase64(arrayBuffer)
         addLog('Base64 转换完成')
         
+        // 关键：需要将数据库导入到 SQLite 插件的管理目录
+        addLog('准备导入数据库到 SQLite...')
+        
+        // 先删除旧数据库（如果存在）
+        const sqlite = new SQLiteConnection(CapacitorSQLite)
+        try {
+          await sqlite.closeConnection(dbName, false)
+          addLog('关闭旧连接')
+        } catch (e) {
+          addLog('无旧连接需关闭')
+        }
+        
+        try {
+          await CapacitorSQLite.deleteDatabase({ database: dbName })
+          addLog('删除旧数据库')
+        } catch (e) {
+          addLog('无旧数据库需删除')
+        }
+        
+        // 使用 importFromJson 方法导入
+        // 但这需要 JSON 格式，所以我们用另一种方法：
+        // 直接保存到 SQLite 的数据库目录
+        addLog('保存到 SQLite 数据目录...')
+        
+        // 在 Android 上，SQLite 数据库应该保存在特定位置
+        // 我们需要使用 Filesystem 的 writeFile，但路径要正确
         await Filesystem.writeFile({
-          path: `${dbName}.db`,
+          path: `databases/${dbName}.db`,
           data: base64Data,
-          directory: Directory.Data
+          directory: Directory.Data,
+          recursive: true
         })
         
         addLog('数据库文件已保存')
@@ -324,7 +351,7 @@ export const useDbStore = defineStore('db', () => {
         addLog('删除旧数据库...')
         try {
           await Filesystem.deleteFile({
-            path: 'photo.db',
+            path: 'databases/photo.db',
             directory: Directory.Data
           })
         } catch (e) {
