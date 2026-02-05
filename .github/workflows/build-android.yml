@@ -48,9 +48,34 @@ jobs:
       working-directory: photo-app/photo-viewer/android
       run: ./gradlew assembleDebug --no-daemon
       
+    - name: Rename APK
+      run: |
+        cd photo-app/photo-viewer/android/app/build/outputs/apk/debug
+        mv app-debug.apk photo-viewer-v${{ github.run_number }}.apk
+      
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: photo-app/photo-viewer/android/app/build/outputs/apk/debug/app-debug.apk
+        path: photo-app/photo-viewer/android/app/build/outputs/apk/debug/photo-viewer-v${{ github.run_number }}.apk
         retention-days: 30
+        
+    - name: Create Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v1.0.${{ github.run_number }}
+        name: Photo Viewer v1.0.${{ github.run_number }}
+        body: |
+          自动构建版本 v1.0.${{ github.run_number }}
+          
+          构建时间: ${{ github.event.head_commit.timestamp }}
+          提交信息: ${{ github.event.head_commit.message }}
+          
+          ## 下载
+          - [下载 APK](https://github.com/sky2048/photo-app/releases/download/v1.0.${{ github.run_number }}/photo-viewer-v${{ github.run_number }}.apk)
+        files: photo-app/photo-viewer/android/app/build/outputs/apk/debug/photo-viewer-v${{ github.run_number }}.apk
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

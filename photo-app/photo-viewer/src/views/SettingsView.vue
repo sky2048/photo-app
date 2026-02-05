@@ -81,9 +81,39 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <div class="setting-title">版本</div>
-            <div class="setting-desc">1.0.0</div>
+            <div class="setting-title">当前版本</div>
+            <div class="setting-desc">{{ updateStore.currentVersion }}</div>
           </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">检查更新</div>
+            <div class="setting-desc" v-if="updateStore.latestVersion">
+              {{ updateStore.updateAvailable ? `发现新版本 ${updateStore.latestVersion}` : '已是最新版本' }}
+            </div>
+            <div class="setting-desc" v-else>点击检查是否有新版本</div>
+          </div>
+          <button 
+            class="btn-primary" 
+            @click="handleCheckUpdate"
+            :disabled="updateStore.checking"
+          >
+            {{ updateStore.checking ? '检查中...' : '检查' }}
+          </button>
+        </div>
+
+        <div class="setting-item" v-if="updateStore.updateAvailable">
+          <div class="setting-info">
+            <div class="setting-title">下载更新</div>
+            <div class="setting-desc">{{ updateStore.releaseNotes }}</div>
+          </div>
+          <button 
+            class="btn-primary btn-download" 
+            @click="handleDownloadUpdate"
+          >
+            下载
+          </button>
         </div>
       </div>
     </div>
@@ -129,9 +159,11 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useDbStore } from '../stores/db'
 import { useSettingsStore } from '../stores/settings'
+import { useUpdateStore } from '../stores/update'
 
 const dbStore = useDbStore()
 const settingsStore = useSettingsStore()
+const updateStore = useUpdateStore()
 const updating = ref(false)
 
 // 时间和日期
@@ -181,6 +213,25 @@ async function handleUpdateDb() {
 
 function selectAnimation(type) {
   settingsStore.setAnimationType(type)
+}
+
+async function handleCheckUpdate() {
+  const result = await updateStore.checkUpdate()
+  if (result) {
+    if (result.hasUpdate) {
+      alert(`发现新版本 ${result.latestVersion}！\n\n${result.releaseNotes}`)
+    } else {
+      alert('当前已是最新版本')
+    }
+  } else {
+    alert('检查更新失败，请稍后重试')
+  }
+}
+
+function handleDownloadUpdate() {
+  if (confirm('确定要下载新版本吗？')) {
+    updateStore.downloadUpdate()
+  }
 }
 
 onMounted(() => {
@@ -374,6 +425,14 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.4);
   cursor: not-allowed;
+}
+
+.btn-download {
+  background: rgba(76, 175, 80, 0.8);
+}
+
+.btn-download:hover {
+  background: rgba(76, 175, 80, 0.9);
 }
 
 /* 底部导航 */

@@ -29,6 +29,12 @@
         </transition>
       </div>
       
+      <!-- 预加载前后各1张图片 -->
+      <div style="display: none;">
+        <img v-if="preloadImages.prev" :src="preloadImages.prev" alt="preload">
+        <img v-if="preloadImages.next" :src="preloadImages.next" alt="preload">
+      </div>
+      
       <!-- 页码指示器 -->
       <transition name="fade">
         <div v-if="!isTransitioning" class="page-indicator">
@@ -126,6 +132,21 @@ const totalImages = computed(() => {
   return articleDetail.value?.images?.length || 1
 })
 
+// 预加载前后各1张图片
+const preloadImages = computed(() => {
+  if (!articleDetail.value?.images || articleDetail.value.images.length === 0) {
+    return { prev: null, next: null }
+  }
+  
+  const images = articleDetail.value.images
+  const current = currentImageIndex.value
+  
+  return {
+    prev: current >= 1 ? images[current - 1] : null,
+    next: current < images.length - 1 ? images[current + 1] : null
+  }
+})
+
 function updateTime() {
   const now = new Date()
   const hours = String(now.getHours()).padStart(2, '0')
@@ -211,8 +232,8 @@ function handleTouchEnd() {
   
   // 如果是横向滑动
   if (Math.abs(deltaX) > Math.abs(deltaY)) {
-    // 向右滑动超过 100px，退出详情页
-    if (deltaX > 100) {
+    // 向右滑动超过 50px，退出详情页（降低阈值提高灵敏度）
+    if (deltaX > 50) {
       router.back()
       return
     }
