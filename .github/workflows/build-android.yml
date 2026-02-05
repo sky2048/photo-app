@@ -35,6 +35,13 @@ jobs:
       working-directory: photo-app/photo-viewer
       run: npm ci
       
+    - name: Install Capacitor plugins
+      working-directory: photo-app/photo-viewer
+      run: |
+        npm install @capacitor-community/http
+        npm install cordova-plugin-file-opener2
+        npm install @capacitor-community/file-opener
+      
     - name: Build web app
       working-directory: photo-app/photo-viewer
       run: npm run build
@@ -58,21 +65,121 @@ jobs:
         
         # 允许明文流量（HTTP）
         sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+    
+    - name: Setup Release Keystore
+      working-directory: photo-app/photo-viewer
+      run: |
+        # 创建 keystore 目录
+        mkdir -p android/app
+        
+        # 生成 keystore（使用固定的密码和别名）
+        keytool -genkeypair -v \
+          -storetype PKCS12 \
+          -keystore android/app/release.keystore \
+          -alias photo-viewer \
+          -keyalg RSA \
+          -keysize 2048 \
+          -validity 10000 \
+          -storepass photoviewer2024 \
+          -keypass photoviewer2024 \
+          -dname "CN=Photo Viewer, OU=Development, O=Photo App, L=Beijing, ST=Beijing, C=CN"
+        
+        # 创建 keystore.properties
+        cat > android/keystore.properties << EOF
+        storePassword=photoviewer2024
+        keyPassword=photoviewer2024
+        keyAlias=photo-viewer
+        storeFile=release.keystore
+        EOF
+        
+        # 修改 build.gradle 使用 release 签名
+        cat > android/app/build.gradle.patch << 'EOF'
+        --- a/build.gradle
+        +++ b/build.gradle
+        @@ -1,6 +1,18 @@
+         apply plugin: 'com.android.application'
+         
+         android {
+        +    def keystorePropertiesFile = rootProject.file("keystore.properties")
+        +    def keystoreProperties = new Properties()
+        +    if (keystorePropertiesFile.exists()) {
+        +        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+        +    }
+        +
+        +    signingConfigs {
+        +        release {
+        +            keyAlias keystoreProperties['keyAlias']
+        +            keyPassword keystoreProperties['keyPassword']
+        +            storeFile file(keystoreProperties['storeFile'])
+        +            storePassword keystoreProperties['storePassword']
+        +        }
+        +    }
+             namespace "com.photoviewer.app"
+             compileSdkVersion rootProject.ext.compileSdkVersion
+             defaultConfig {
+        @@ -15,6 +27,7 @@
+             buildTypes {
+                 release {
+                     minifyEnabled false
+        +            signingConfig signingConfigs.release
+                     proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+                 }
+             }
+        EOF
+        
+        # 应用补丁（如果失败则手动添加）
+        cd android/app
+        if ! patch -p1 < build.gradle.patch 2>/dev/null; then
+          echo "Patch failed, manually adding signing config..."
+          
+          # 备份原文件
+          cp build.gradle build.gradle.bak
+          
+          # 在 android { 后添加签名配置
+          awk '/^android \{/ {
+            print
+            print "    def keystorePropertiesFile = rootProject.file(\"keystore.properties\")"
+            print "    def keystoreProperties = new Properties()"
+            print "    if (keystorePropertiesFile.exists()) {"
+            print "        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))"
+            print "    }"
+            print ""
+            print "    signingConfigs {"
+            print "        release {"
+            print "            keyAlias keystoreProperties[\"keyAlias\"]"
+            print "            keyPassword keystoreProperties[\"keyPassword\"]"
+            print "            storeFile file(keystoreProperties[\"storeFile\"])"
+            print "            storePassword keystoreProperties[\"storePassword\"]"
+            print "        }"
+            print "    }"
+            next
+          }
+          /buildTypes \{/,/release \{/ {
+            print
+            if (/release \{/) {
+              getline
+              print "            signingConfig signingConfigs.release"
+              print
+            }
+            next
+          }
+          { print }' build.gradle.bak > build.gradle
+        fi
       
     - name: Build Android APK
       working-directory: photo-app/photo-viewer/android
-      run: ./gradlew assembleDebug --no-daemon
+      run: ./gradlew assembleRelease --no-daemon
       
     - name: Rename APK
       run: |
-        cd photo-app/photo-viewer/android/app/build/outputs/apk/debug
-        mv app-debug.apk photo-viewer-v${{ github.run_number }}.apk
+        cd photo-app/photo-viewer/android/app/build/outputs/apk/release
+        mv app-release.apk photo-viewer-v${{ github.run_number }}.apk
       
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
-        path: photo-app/photo-viewer/android/app/build/outputs/apk/debug/photo-viewer-v${{ github.run_number }}.apk
+        name: app-release
+        path: photo-app/photo-viewer/android/app/build/outputs/apk/release/photo-viewer-v${{ github.run_number }}.apk
         retention-days: 30
         
     - name: Create Release
@@ -89,7 +196,7 @@ jobs:
           
           ## 下载
           - [下载 APK](https://github.com/sky2048/photo-app/releases/download/v1.0.${{ github.run_number }}/photo-viewer-v${{ github.run_number }}.apk)
-        files: photo-app/photo-viewer/android/app/build/outputs/apk/debug/photo-viewer-v${{ github.run_number }}.apk
+        files: photo-app/photo-viewer/android/app/build/outputs/apk/release/photo-viewer-v${{ github.run_number }}.apk
         draft: false
         prerelease: false
       env:
