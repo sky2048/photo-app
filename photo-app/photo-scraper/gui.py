@@ -19,9 +19,9 @@ class ScraperGUI:
         
         # 初始化爬虫
         self.scraper = None
-        # 使用根目录的数据库（上两级目录）
+        # 使用前端 public 目录的数据库
         import os
-        self.db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'photo.db')
+        self.db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'photo-viewer', 'public', 'photo.db')
         self.init_scraper()
         
         # 爬取状态

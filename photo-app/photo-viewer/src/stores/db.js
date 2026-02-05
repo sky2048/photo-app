@@ -31,13 +31,13 @@ export const useDbStore = defineStore('db', () => {
   
   // 多个备用 CDN 地址
   const dbUrls = [
-    'https://cdn.jsdelivr.net/gh/sky2048/photo-app@master/photo.db',
-    'https://raw.githubusercontent.com/sky2048/photo-app/master/photo.db',
-    'https://ghproxy.com/https://raw.githubusercontent.com/sky2048/photo-app/master/photo.db'
+    'https://cdn.jsdelivr.net/gh/sky2048/photo-app@master/photo-app/photo-viewer/public/photo.db',
+    'https://raw.githubusercontent.com/sky2048/photo-app/master/photo-app/photo-viewer/public/photo.db',
+    'https://ghproxy.com/https://raw.githubusercontent.com/sky2048/photo-app/master/photo-app/photo-viewer/public/photo.db'
   ]
   
   // GitHub API 地址（用于获取文件信息）
-  const githubApiUrl = 'https://api.github.com/repos/sky2048/photo-app/contents/photo.db'
+  const githubApiUrl = 'https://api.github.com/repos/sky2048/photo-app/contents/photo-app/photo-viewer/public/photo.db'
   
   
   // 检查是否有待应用的更新

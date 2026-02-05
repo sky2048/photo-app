@@ -160,9 +160,9 @@ def main():
     
     # 配置
     import os
-    # 如果没有指定数据库路径，使用根目录的 photo.db
+    # 如果没有指定数据库路径，使用前端 public 目录的 photo.db
     if args.db == 'photo.db':
-        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'photo.db')
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'photo-viewer', 'public', 'photo.db')
     else:
         db_path = args.db
     
