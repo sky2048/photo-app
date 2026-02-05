@@ -228,7 +228,7 @@ function updateTime() {
 }
 
 const dbUrl = computed(() => {
-  return 'https://cdn.jsdelivr.net/gh/sky2048/photo-app@master/photo.db'
+  return 'https://cdn.jsdelivr.net/gh/sky2048/photo-app@master/photo-app/photo-viewer/public/photo.db'
 })
 
 // 检查数据库更新
