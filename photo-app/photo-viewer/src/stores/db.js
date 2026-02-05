@@ -76,7 +76,7 @@ export const useDbStore = defineStore('db', () => {
             addLog('下载完成')
           }
           
-          // 创建新连接 - 使用 encrypted 模式为 false
+          // 创建新连接
           addLog('创建数据库连接...')
           db.value = await sqlite.createConnection('photo', false, 'no-encryption', 1, false)
           addLog('连接创建成功')
@@ -87,7 +87,7 @@ export const useDbStore = defineStore('db', () => {
         await db.value.open()
         addLog('数据库打开成功')
         
-        // 测试查询 - 使用 execute 方法
+        // 测试查询
         try {
           addLog('测试查询数据库...')
           const testResult = await db.value.query('SELECT COUNT(*) as total FROM articles', [])
@@ -99,8 +99,7 @@ export const useDbStore = defineStore('db', () => {
           }
         } catch (testError) {
           addLog('测试查询失败: ' + testError.message)
-          // 可能是数据库文件损坏或格式不对
-          throw new Error('数据库文件无法读取，请尝试重新下载')
+          throw new Error('数据库文件无法读取: ' + testError.message)
         }
         
       } else {
@@ -234,7 +233,7 @@ export const useDbStore = defineStore('db', () => {
     }
   }
   
-  // 从 GitHub 下载数据库（原生平台）- 使用正确的 SQLite 导入方式
+  // 从 GitHub 下载数据库（原生平台）- 简化版本
   async function downloadDatabase() {
     downloadProgress.value = 0
     downloadError.value = null
@@ -244,18 +243,26 @@ export const useDbStore = defineStore('db', () => {
     // 尝试所有 CDN 地址
     for (let i = 0; i < dbUrls.length; i++) {
       try {
-        addLog(`尝试 CDN ${i + 1}...`)
+        addLog(`尝试 CDN ${i + 1}: ${dbUrls[i]}`)
         
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 30000)
+        const timeoutId = setTimeout(() => {
+          addLog('请求超时，中止...')
+          controller.abort()
+        }, 60000)  // 60 秒超时
         
         const response = await fetch(dbUrls[i], {
-          signal: controller.signal
+          signal: controller.signal,
+          method: 'GET',
+          mode: 'cors'
         })
+        
         clearTimeout(timeoutId)
         
+        addLog(`响应状态: ${response.status}`)
+        
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         }
         
         addLog('开始接收数据...')
@@ -263,67 +270,18 @@ export const useDbStore = defineStore('db', () => {
         const receivedLength = arrayBuffer.byteLength
         
         addLog(`下载完成: ${receivedLength} bytes`)
-        downloadProgress.value = 100
         
-        // 将 ArrayBuffer 转换为 Base64
-        const uint8Array = new Uint8Array(arrayBuffer)
         const base64Data = arrayBufferToBase64(arrayBuffer)
         addLog('Base64 转换完成')
         
-        // 使用 Capacitor SQLite 的 importFromJson 方法
-        // 但首先我们需要将数据库保存到可访问的位置
-        addLog('准备导入数据库...')
+        await Filesystem.writeFile({
+          path: `${dbName}.db`,
+          data: base64Data,
+          directory: Directory.Data
+        })
         
-        // 方法1: 尝试使用 SQLite 插件的内部存储
-        try {
-          // 先删除旧数据库
-          const sqlite = new SQLiteConnection(CapacitorSQLite)
-          try {
-            await sqlite.closeConnection(dbName, false)
-          } catch (e) {
-            // 连接可能不存在
-          }
-          
-          try {
-            await CapacitorSQLite.deleteDatabase({ database: dbName })
-            addLog('删除旧数据库成功')
-          } catch (e) {
-            addLog('无旧数据库需删除')
-          }
-          
-          // 创建临时连接并执行导入
-          // 注意：我们需要先创建一个空数据库，然后导入数据
-          // 但 Capacitor SQLite 不支持直接导入二进制数据库文件
-          
-          // 所以我们使用文件系统方法：将文件保存到 SQLite 的数据目录
-          addLog('保存到 SQLite 数据目录...')
-          
-          // Android 的 SQLite 数据库通常在 /data/data/包名/databases/
-          // 我们直接保存为 photo.db
-          await Filesystem.writeFile({
-            path: `${dbName}.db`,
-            data: base64Data,
-            directory: Directory.Data
-          })
-          
-          // 获取实际保存路径用于调试
-          try {
-            const uri = await Filesystem.getUri({
-              path: `${dbName}.db`,
-              directory: Directory.Data
-            })
-            addLog('文件路径: ' + uri.uri)
-          } catch (e) {
-            addLog('无法获取文件路径')
-          }
-          
-          addLog('数据库文件已保存')
-          
-        } catch (error) {
-          addLog('导入失败: ' + error.message)
-          throw error
-        }
-        
+        addLog('数据库文件已保存')
+        downloadProgress.value = 100
         return
         
       } catch (error) {
@@ -331,7 +289,8 @@ export const useDbStore = defineStore('db', () => {
         downloadError.value = error.message
         
         if (i < dbUrls.length - 1) {
-          addLog('尝试下一个源...')
+          addLog('等待 2 秒后尝试下一个源...')
+          await new Promise(resolve => setTimeout(resolve, 2000))
           continue
         }
         
