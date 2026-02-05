@@ -175,40 +175,64 @@ export const useDbStore = defineStore('db', () => {
       await db.value.execute(`ATTACH DATABASE '${dbPath}' AS downloaded;`)
       addLog('数据库附加成功')
       
-      // 获取所有表
+      // 获取所有表名（一次性获取，避免多次查询）
       const tablesResult = await db.value.query(
-        "SELECT name FROM downloaded.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+        "SELECT name FROM downloaded.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
         []
       )
       
-      addLog('找到表: ' + JSON.stringify(tablesResult))
+      addLog('找到 ' + (tablesResult.values?.length || 0) + ' 个表')
       
       if (tablesResult.values && tablesResult.values.length > 0) {
-        for (const row of tablesResult.values) {
-          const tableName = row.name || row[0]
-          addLog('复制表: ' + tableName)
+        // 提取所有表名
+        const tableNames = tablesResult.values.map(row => row.name || row[0])
+        addLog('表列表: ' + tableNames.join(', '))
+        
+        for (const tableName of tableNames) {
+          addLog('处理表: ' + tableName)
           
-          // 获取表结构
+          // 获取表结构（一次性获取）
           const createTableResult = await db.value.query(
-            `SELECT sql FROM downloaded.sqlite_master WHERE type='table' AND name='${tableName}'`,
-            []
+            `SELECT sql FROM downloaded.sqlite_master WHERE type='table' AND name=?`,
+            [tableName]
           )
           
           if (createTableResult.values && createTableResult.values.length > 0) {
             const createSql = createTableResult.values[0].sql || createTableResult.values[0][0]
-            addLog('创建表: ' + tableName)
-            await db.value.execute(createSql)
             
-            // 复制数据
-            addLog('复制数据: ' + tableName)
-            await db.value.execute(`INSERT INTO ${tableName} SELECT * FROM downloaded.${tableName};`)
+            // 创建表
+            try {
+              await db.value.execute(createSql)
+              addLog('✓ 创建表: ' + tableName)
+            } catch (e) {
+              if (e.message.includes('already exists')) {
+                addLog('表已存在: ' + tableName)
+              } else {
+                addLog('✗ 创建表失败: ' + e.message)
+                continue
+              }
+            }
+            
+            // 复制数据（使用事务）
+            try {
+              await db.value.execute(`INSERT INTO ${tableName} SELECT * FROM downloaded.${tableName};`)
+              addLog('✓ 复制数据: ' + tableName)
+            } catch (e) {
+              addLog('✗ 复制数据失败: ' + e.message)
+            }
           }
         }
       }
       
-      // 分离数据库
-      await db.value.execute('DETACH DATABASE downloaded;')
-      addLog('数据库分离成功')
+      // 关键：关闭数据库连接，这会自动分离所有附加的数据库
+      addLog('关闭数据库连接...')
+      await db.value.close()
+      addLog('数据库已关闭')
+      
+      // 重新打开数据库
+      addLog('重新打开数据库...')
+      await db.value.open()
+      addLog('数据库已重新打开')
       
     } catch (error) {
       addLog('导入失败: ' + error.message)
