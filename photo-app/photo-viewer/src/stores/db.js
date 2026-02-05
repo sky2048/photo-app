@@ -76,7 +76,7 @@ export const useDbStore = defineStore('db', () => {
             addLog('下载完成')
           }
           
-          // 创建新连接
+          // 创建新连接 - 使用 encrypted 模式为 false
           addLog('创建数据库连接...')
           db.value = await sqlite.createConnection('photo', false, 'no-encryption', 1, false)
           addLog('连接创建成功')
@@ -87,13 +87,20 @@ export const useDbStore = defineStore('db', () => {
         await db.value.open()
         addLog('数据库打开成功')
         
-        // 测试查询
+        // 测试查询 - 使用 execute 方法
         try {
           addLog('测试查询数据库...')
-          const testResult = await db.value.query('SELECT COUNT(*) as total FROM articles')
-          addLog('测试查询结果: ' + JSON.stringify(testResult))
+          const testResult = await db.value.query('SELECT COUNT(*) as total FROM articles', [])
+          addLog('查询结果: ' + JSON.stringify(testResult))
+          
+          if (testResult && testResult.values && testResult.values.length > 0) {
+            const total = testResult.values[0].total || testResult.values[0][0]
+            addLog('数据库中有 ' + total + ' 篇文章')
+          }
         } catch (testError) {
           addLog('测试查询失败: ' + testError.message)
+          // 可能是数据库文件损坏或格式不对
+          throw new Error('数据库文件无法读取，请尝试重新下载')
         }
         
       } else {
@@ -128,19 +135,19 @@ export const useDbStore = defineStore('db', () => {
     }
   }
   
-  // 检查数据库是否存在 - 简化版本，避免触发 createSyncTable 错误
+  // 检查数据库是否存在 - 简化版本
   async function checkDatabaseExists() {
     try {
-      addLog('使用文件系统检查数据库...')
-      // 直接检查文件是否存在，不使用 getDatabaseList
+      addLog('检查数据库文件...')
+      // 直接检查文件是否存在
       const result = await Filesystem.stat({
-        path: 'databases/photo.db',
+        path: 'photo.db',
         directory: Directory.Data
       })
       addLog('数据库文件存在')
       return true
     } catch (error) {
-      addLog('数据库文件不存在: ' + error.message)
+      addLog('数据库文件不存在')
       return false
     }
   }
@@ -227,7 +234,7 @@ export const useDbStore = defineStore('db', () => {
     }
   }
   
-  // 从 GitHub 下载数据库（原生平台）- 修复版本
+  // 从 GitHub 下载数据库（原生平台）- 使用正确的 SQLite 导入方式
   async function downloadDatabase() {
     downloadProgress.value = 0
     downloadError.value = null
@@ -252,62 +259,71 @@ export const useDbStore = defineStore('db', () => {
         }
         
         addLog('开始接收数据...')
-        const contentLength = response.headers.get('content-length')
-        const total = parseInt(contentLength, 10)
-        
-        // 流式读取
-        const reader = response.body.getReader()
-        const chunks = []
-        let receivedLength = 0
-        
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          
-          chunks.push(value)
-          receivedLength += value.length
-          
-          if (total) {
-            downloadProgress.value = Math.round((receivedLength / total) * 100)
-          }
-        }
-        
-        // 合并数据
-        const arrayBuffer = new Uint8Array(receivedLength)
-        let position = 0
-        for (const chunk of chunks) {
-          arrayBuffer.set(chunk, position)
-          position += chunk.length
-        }
+        const arrayBuffer = await response.arrayBuffer()
+        const receivedLength = arrayBuffer.byteLength
         
         addLog(`下载完成: ${receivedLength} bytes`)
+        downloadProgress.value = 100
         
-        const base64Data = arrayBufferToBase64(arrayBuffer.buffer)
+        // 将 ArrayBuffer 转换为 Base64
+        const uint8Array = new Uint8Array(arrayBuffer)
+        const base64Data = arrayBufferToBase64(arrayBuffer)
         addLog('Base64 转换完成')
         
-        // 保存数据库文件到正确的位置
-        addLog('保存数据库文件...')
+        // 使用 Capacitor SQLite 的 importFromJson 方法
+        // 但首先我们需要将数据库保存到可访问的位置
+        addLog('准备导入数据库...')
         
-        // 确保目录存在
+        // 方法1: 尝试使用 SQLite 插件的内部存储
         try {
-          await Filesystem.mkdir({
-            path: 'databases',
-            directory: Directory.Data,
-            recursive: true
+          // 先删除旧数据库
+          const sqlite = new SQLiteConnection(CapacitorSQLite)
+          try {
+            await sqlite.closeConnection(dbName, false)
+          } catch (e) {
+            // 连接可能不存在
+          }
+          
+          try {
+            await CapacitorSQLite.deleteDatabase({ database: dbName })
+            addLog('删除旧数据库成功')
+          } catch (e) {
+            addLog('无旧数据库需删除')
+          }
+          
+          // 创建临时连接并执行导入
+          // 注意：我们需要先创建一个空数据库，然后导入数据
+          // 但 Capacitor SQLite 不支持直接导入二进制数据库文件
+          
+          // 所以我们使用文件系统方法：将文件保存到 SQLite 的数据目录
+          addLog('保存到 SQLite 数据目录...')
+          
+          // Android 的 SQLite 数据库通常在 /data/data/包名/databases/
+          // 我们直接保存为 photo.db
+          await Filesystem.writeFile({
+            path: `${dbName}.db`,
+            data: base64Data,
+            directory: Directory.Data
           })
-        } catch (e) {
-          // 目录可能已存在，忽略错误
+          
+          // 获取实际保存路径用于调试
+          try {
+            const uri = await Filesystem.getUri({
+              path: `${dbName}.db`,
+              directory: Directory.Data
+            })
+            addLog('文件路径: ' + uri.uri)
+          } catch (e) {
+            addLog('无法获取文件路径')
+          }
+          
+          addLog('数据库文件已保存')
+          
+        } catch (error) {
+          addLog('导入失败: ' + error.message)
+          throw error
         }
         
-        // 保存文件
-        await Filesystem.writeFile({
-          path: `databases/${dbName}.db`,
-          data: base64Data,
-          directory: Directory.Data
-        })
-        
-        addLog('数据库文件保存成功')
-        downloadProgress.value = 100
         return
         
       } catch (error) {
@@ -327,27 +343,48 @@ export const useDbStore = defineStore('db', () => {
   // 更新数据库（重新下载）
   async function updateDatabase() {
     try {
+      addLog('开始更新数据库...')
+      
       if (isWebPlatform.value) {
         // Web 平台
         localStorage.removeItem('photo_db')
         await downloadDatabaseWeb()
       } else {
         // 原生平台
+        addLog('关闭现有连接...')
         if (db.value) {
-          await db.value.close()
+          try {
+            await db.value.close()
+            db.value = null
+          } catch (e) {
+            addLog('关闭连接失败: ' + e.message)
+          }
         }
         
-        await Filesystem.deleteFile({
-          path: 'photo.db',
-          directory: Directory.Data
-        })
+        // 删除旧数据库文件
+        addLog('删除旧数据库...')
+        try {
+          await Filesystem.deleteFile({
+            path: 'photo.db',
+            directory: Directory.Data
+          })
+        } catch (e) {
+          addLog('删除文件失败（可能不存在）: ' + e.message)
+        }
         
+        // 重新下载
+        addLog('重新下载数据库...')
         await downloadDatabase()
+        
+        // 重新初始化
+        addLog('重新初始化...')
         await initDatabase()
       }
       
+      addLog('数据库更新成功')
       return true
     } catch (error) {
+      addLog('更新失败: ' + error.message)
       console.error('更新数据库失败:', error)
       return false
     }
