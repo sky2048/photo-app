@@ -38,8 +38,8 @@ export const useUpdateStore = defineStore('update', () => {
       )
       
       if (apkAsset) {
-        // 使用 jsDelivr 加速下载
-        downloadUrl.value = `https://cdn.jsdelivr.net/gh/sky2048/photo-app@${release.tag_name}/${apkAsset.name}`
+        // 使用 GitHub 直接下载链接
+        downloadUrl.value = apkAsset.browser_download_url
       }
       
       // 比较版本号
