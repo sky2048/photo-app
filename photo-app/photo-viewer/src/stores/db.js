@@ -13,6 +13,8 @@ export const useDbStore = defineStore('db', () => {
   const downloadProgress = ref(0) // 下载进度
   const downloadError = ref(null) // 下载错误信息
   const debugLog = ref([]) // 调试日志
+  const dbVersion = ref(null) // 当前数据库版本（文件修改时间）
+  const articleCount = ref(0) // 文章总数
   
   // 添加调试日志
   function addLog(message) {
@@ -34,6 +36,83 @@ export const useDbStore = defineStore('db', () => {
     'https://ghproxy.com/https://raw.githubusercontent.com/sky2048/photo-app/master/photo.db'
   ]
   
+  // GitHub API 地址（用于获取文件信息）
+  const githubApiUrl = 'https://api.github.com/repos/sky2048/photo-app/contents/photo.db'
+  
+  
+  // 检查是否有待应用的更新
+  async function checkPendingUpdate() {
+    try {
+      const pendingUpdate = localStorage.getItem('pending_db_update')
+      if (pendingUpdate === 'true') {
+        addLog('检测到待应用的数据库更新')
+        return true
+      }
+      return false
+    } catch (error) {
+      addLog('检查待更新状态失败: ' + error.message)
+      return false
+    }
+  }
+  
+  // 应用待更新的数据库
+  async function applyPendingUpdate() {
+    try {
+      addLog('=== 开始应用待更新的数据库 ===')
+      
+      if (isWebPlatform.value) {
+        // Web 平台：localStorage 中已经是新数据库了
+        addLog('Web 平台，数据库已更新')
+      } else {
+        // 原生平台：需要替换数据库文件
+        addLog('原生平台，准备替换数据库文件')
+        
+        // 检查下载的文件是否存在
+        try {
+          const downloadedFile = await Filesystem.stat({
+            path: 'photo_downloaded.db',
+            directory: Directory.Data
+          })
+          addLog('找到下载的数据库文件: ' + downloadedFile.size + ' bytes')
+          
+          // 读取下载的文件
+          const downloadedData = await Filesystem.readFile({
+            path: 'photo_downloaded.db',
+            directory: Directory.Data
+          })
+          addLog('读取下载文件成功')
+          
+          // 保存到 databases 目录
+          await Filesystem.writeFile({
+            path: '../databases/photo.db',
+            data: downloadedData.data,
+            directory: Directory.Data
+          })
+          addLog('数据库文件已替换')
+          
+          // 删除临时文件
+          await Filesystem.deleteFile({
+            path: 'photo_downloaded.db',
+            directory: Directory.Data
+          })
+          addLog('临时文件已删除')
+          
+        } catch (error) {
+          addLog('应用更新失败: ' + error.message)
+          throw error
+        }
+      }
+      
+      // 清除待更新标记
+      localStorage.removeItem('pending_db_update')
+      addLog('待更新标记已清除')
+      
+      return true
+    } catch (error) {
+      addLog('应用更新失败: ' + error.message)
+      throw error
+    }
+  }
   
   // 初始化数据库
   async function initDatabase() {
@@ -41,6 +120,18 @@ export const useDbStore = defineStore('db', () => {
       addLog('=== 开始初始化数据库 ===')
       addLog('平台: ' + Capacitor.getPlatform())
       addLog('是否原生: ' + Capacitor.isNativePlatform())
+      
+      // 检查是否有待应用的更新
+      const hasPendingUpdate = await checkPendingUpdate()
+      if (hasPendingUpdate) {
+        addLog('发现待应用的更新，先应用更新')
+        try {
+          await applyPendingUpdate()
+          addLog('更新应用成功')
+        } catch (error) {
+          addLog('应用更新失败，继续正常初始化: ' + error.message)
+        }
+      }
       
       if (Capacitor.isNativePlatform()) {
         // 原生平台（iOS/Android）- 使用 Capacitor SQLite
@@ -94,7 +185,7 @@ export const useDbStore = defineStore('db', () => {
           }
         }
         
-        // 测试查询
+        // 测试查询并获取文章数量
         try {
           addLog('测试查询数据库...')
           const testResult = await db.value.query('SELECT COUNT(*) as total FROM articles', [])
@@ -102,12 +193,16 @@ export const useDbStore = defineStore('db', () => {
           
           if (testResult && testResult.values && testResult.values.length > 0) {
             const total = testResult.values[0].total || testResult.values[0][0]
+            articleCount.value = total
             addLog('数据库中有 ' + total + ' 篇文章')
           }
         } catch (testError) {
           addLog('测试查询失败: ' + testError.message)
           throw new Error('数据库文件无法读取: ' + testError.message)
         }
+        
+        // 获取数据库版本信息
+        await loadDatabaseVersion()
         
       } else {
         // Web 平台 - 使用 sql.js
@@ -302,8 +397,18 @@ export const useDbStore = defineStore('db', () => {
         const base64 = uint8ArrayToBase64(arrayBuffer)
         localStorage.setItem('photo_db', base64)
         
+        // 获取文章数量
+        const testResult = sqlJsDb.value.exec('SELECT COUNT(*) as total FROM articles')
+        if (testResult.length > 0 && testResult[0].values.length > 0) {
+          articleCount.value = testResult[0].values[0][0]
+        }
+        
         downloadProgress.value = 100
         console.log('数据库下载完成')
+        
+        // 获取数据库版本信息
+        await loadDatabaseVersion()
+        
         return
         
       } catch (error) {
@@ -404,53 +509,164 @@ export const useDbStore = defineStore('db', () => {
     }
   }
   
-  // 更新数据库（重新下载）
-  async function updateDatabase() {
+  // 检查远程数据库版本（使用 GitHub API）
+  async function checkRemoteDatabaseVersion() {
     try {
-      addLog('开始更新数据库...')
+      addLog('检查远程数据库版本...')
       
-      if (isWebPlatform.value) {
-        // Web 平台
-        localStorage.removeItem('photo_db')
-        await downloadDatabaseWeb()
-      } else {
-        // 原生平台
-        addLog('关闭现有连接...')
-        if (db.value) {
-          try {
-            await db.value.close()
-            db.value = null
-          } catch (e) {
-            addLog('关闭连接失败: ' + e.message)
-          }
+      const response = await fetch(githubApiUrl, {
+        headers: {
+          'Accept': 'application/vnd.github.v3+json'
         }
-        
-        // 删除旧数据库文件
-        addLog('删除旧数据库...')
-        try {
-          await Filesystem.deleteFile({
-            path: '../databases/photo.db',
-            directory: Directory.Data
-          })
-        } catch (e) {
-          addLog('删除文件失败（可能不存在）')
-        }
-        
-        // 重新下载
-        addLog('重新下载数据库...')
-        await downloadDatabase()
-        
-        // 重新初始化
-        addLog('重新初始化...')
-        await initDatabase()
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
       }
       
-      addLog('数据库更新成功')
-      return true
+      const data = await response.json()
+      
+      // GitHub API 返回文件的 SHA 和大小
+      const remoteVersion = {
+        sha: data.sha,
+        size: data.size,
+        lastModified: new Date(data.commit?.committer?.date || Date.now()).getTime()
+      }
+      
+      addLog('远程版本: ' + JSON.stringify(remoteVersion))
+      
+      return remoteVersion
+    } catch (error) {
+      addLog('检查远程版本失败: ' + error.message)
+      // 如果 API 失败，尝试备用方案：HEAD 请求获取文件信息
+      try {
+        const response = await fetch(dbUrls[0], { method: 'HEAD' })
+        const lastModified = response.headers.get('last-modified')
+        const contentLength = response.headers.get('content-length')
+        
+        return {
+          size: parseInt(contentLength) || 0,
+          lastModified: lastModified ? new Date(lastModified).getTime() : Date.now()
+        }
+      } catch (fallbackError) {
+        addLog('备用方案也失败: ' + fallbackError.message)
+        throw new Error('无法检查远程版本')
+      }
+    }
+  }
+  
+  // 加载本地数据库版本信息
+  async function loadDatabaseVersion() {
+    try {
+      const savedVersion = localStorage.getItem('db_version')
+      if (savedVersion) {
+        dbVersion.value = JSON.parse(savedVersion)
+        addLog('本地数据库版本: ' + JSON.stringify(dbVersion.value))
+      }
+    } catch (error) {
+      addLog('加载本地版本信息失败: ' + error.message)
+    }
+  }
+  
+  // 保存数据库版本信息
+  function saveDatabaseVersion(versionInfo) {
+    try {
+      dbVersion.value = versionInfo
+      localStorage.setItem('db_version', JSON.stringify(versionInfo))
+      addLog('版本信息已保存: ' + JSON.stringify(versionInfo))
+    } catch (error) {
+      addLog('保存版本信息失败: ' + error.message)
+    }
+  }
+  
+  // 检查是否需要更新数据库
+  async function checkDatabaseUpdate() {
+    try {
+      addLog('=== 检查数据库更新 ===')
+      
+      // 获取远程版本
+      const remoteVersion = await checkRemoteDatabaseVersion()
+      
+      // 获取本地版本
+      await loadDatabaseVersion()
+      
+      if (!dbVersion.value) {
+        addLog('本地无版本信息，建议更新')
+        return {
+          hasUpdate: true,
+          remoteVersion,
+          localVersion: null,
+          reason: '首次使用'
+        }
+      }
+      
+      // 比较版本（使用文件大小或 SHA）
+      let hasUpdate = false
+      let reason = ''
+      
+      if (remoteVersion.sha && dbVersion.value.sha) {
+        hasUpdate = remoteVersion.sha !== dbVersion.value.sha
+        reason = 'SHA 不同'
+      } else if (remoteVersion.size !== dbVersion.value.size) {
+        hasUpdate = true
+        reason = '文件大小不同'
+      } else if (remoteVersion.lastModified > dbVersion.value.lastModified) {
+        hasUpdate = true
+        reason = '远程文件更新'
+      }
+      
+      addLog(`更新检查结果: ${hasUpdate ? '有更新' : '无更新'} (${reason})`)
+      
+      return {
+        hasUpdate,
+        remoteVersion,
+        localVersion: dbVersion.value,
+        reason
+      }
+    } catch (error) {
+      addLog('检查更新失败: ' + error.message)
+      throw error
+    }
+  }
+  
+  // 更新数据库（下载到临时位置，重启后应用）
+  async function updateDatabase() {
+    try {
+      addLog('=== 开始更新数据库 ===')
+      
+      if (isWebPlatform.value) {
+        // Web 平台：直接更新
+        addLog('Web 平台，直接更新')
+        localStorage.removeItem('photo_db')
+        await downloadDatabaseWeb()
+        
+        // 获取远程版本信息并保存
+        const remoteVersion = await checkRemoteDatabaseVersion()
+        saveDatabaseVersion(remoteVersion)
+        
+        addLog('数据库更新成功')
+        return { success: true, needRestart: false }
+      } else {
+        // 原生平台：下载到临时位置
+        addLog('原生平台，下载到临时位置')
+        
+        // 下载新数据库到临时文件
+        await downloadDatabase()
+        
+        // 获取远程版本信息并保存
+        const remoteVersion = await checkRemoteDatabaseVersion()
+        saveDatabaseVersion(remoteVersion)
+        
+        // 标记为待更新
+        localStorage.setItem('pending_db_update', 'true')
+        addLog('数据库已下载，标记为待更新')
+        
+        return { success: true, needRestart: true }
+      }
     } catch (error) {
       addLog('更新失败: ' + error.message)
       console.error('更新数据库失败:', error)
-      return false
+      return { success: false, error: error.message }
     }
   }
   
@@ -764,7 +980,10 @@ export const useDbStore = defineStore('db', () => {
     downloadProgress,
     downloadError,
     debugLog,
+    dbVersion,
+    articleCount,
     initDatabase,
+    checkDatabaseUpdate,
     updateDatabase,
     getCategories,
     getArticles,

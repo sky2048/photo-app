@@ -13,6 +13,11 @@ export const useUpdateStore = defineStore('update', () => {
   const downloadProgress = ref(0)
   const apkFileName = ref('')
   
+  // 数据库更新相关
+  const dbUpdateAvailable = ref(false)
+  const dbUpdateInfo = ref(null)
+  const checkingDbUpdate = ref(false)
+  
   // 检查更新
   async function checkUpdate() {
     try {
@@ -121,6 +126,72 @@ export const useUpdateStore = defineStore('update', () => {
     }
   }
   
+  // 检查是否需要检查数据库更新（每天一次）
+  function shouldCheckDatabaseUpdate() {
+    try {
+      const lastCheckDate = localStorage.getItem('last_db_check_date')
+      const today = new Date().toDateString()
+      
+      if (!lastCheckDate || lastCheckDate !== today) {
+        console.log('需要检查数据库更新')
+        return true
+      }
+      
+      console.log('今天已检查过数据库更新')
+      return false
+    } catch (error) {
+      console.error('检查更新时间失败:', error)
+      return true // 出错时默认检查
+    }
+  }
+  
+  // 保存检查时间
+  function saveCheckTime() {
+    try {
+      const today = new Date().toDateString()
+      localStorage.setItem('last_db_check_date', today)
+    } catch (error) {
+      console.error('保存检查时间失败:', error)
+    }
+  }
+  
+  // 检查数据库更新
+  async function checkDatabaseUpdate(dbStore) {
+    if (!dbStore) {
+      console.error('需要传入 dbStore')
+      return null
+    }
+    
+    try {
+      checkingDbUpdate.value = true
+      
+      const result = await dbStore.checkDatabaseUpdate()
+      
+      dbUpdateAvailable.value = result.hasUpdate
+      dbUpdateInfo.value = result
+      
+      // 保存检查时间
+      saveCheckTime()
+      
+      return result
+    } catch (error) {
+      console.error('检查数据库更新失败:', error)
+      return null
+    } finally {
+      checkingDbUpdate.value = false
+    }
+  }
+  
+  // 自动检查数据库更新（每天一次）
+  async function autoCheckDatabaseUpdate(dbStore) {
+    if (!shouldCheckDatabaseUpdate()) {
+      return null
+    }
+    
+    console.log('执行每日数据库更新检查...')
+    return await checkDatabaseUpdate(dbStore)
+  }
+  
   return {
     currentVersion,
     latestVersion,
@@ -130,7 +201,13 @@ export const useUpdateStore = defineStore('update', () => {
     releaseNotes,
     downloading,
     downloadProgress,
+    dbUpdateAvailable,
+    dbUpdateInfo,
+    checkingDbUpdate,
     checkUpdate,
-    downloadUpdate
+    downloadUpdate,
+    checkDatabaseUpdate,
+    autoCheckDatabaseUpdate,
+    shouldCheckDatabaseUpdate
   }
 })

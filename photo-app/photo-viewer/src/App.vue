@@ -31,22 +31,43 @@
         </div>
       </div>
     </div>
-    <router-view v-else v-slot="{ Component }">
-      <keep-alive include="HomeView,RandomView">
-        <component :is="Component" />
-      </keep-alive>
-    </router-view>
+    <div v-else>
+      <!-- 数据库更新通知 -->
+      <div v-if="showUpdateNotification" class="update-notification">
+        <div class="notification-content">
+          <div class="notification-icon">🔄</div>
+          <div class="notification-text">
+            <div class="notification-title">数据库有更新</div>
+            <div class="notification-desc">{{ updateNotificationMessage }}</div>
+          </div>
+          <div class="notification-actions">
+            <button class="btn-update" @click="goToSettings">去更新</button>
+            <button class="btn-close" @click="closeUpdateNotification">×</button>
+          </div>
+        </div>
+      </div>
+      
+      <router-view v-slot="{ Component }">
+        <keep-alive include="HomeView,RandomView">
+          <component :is="Component" />
+        </keep-alive>
+      </router-view>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useDbStore } from './stores/db'
+import { useUpdateStore } from './stores/update'
 
 const dbStore = useDbStore()
+const updateStore = useUpdateStore()
 const loading = ref(true)
 const error = ref('')
 const loadingMessage = ref('正在初始化数据库...')
+const showUpdateNotification = ref(false)
+const updateNotificationMessage = ref('')
 
 // 监听下载进度
 watch(() => dbStore.downloadProgress, (progress) => {
@@ -68,12 +89,46 @@ async function initApp() {
     loadingMessage.value = '数据库加载成功！'
     setTimeout(() => {
       loading.value = false
+      
+      // 初始化完成后，检查数据库更新
+      checkForDatabaseUpdate()
     }, 500)
   } catch (e) {
     console.error('初始化失败:', e)
     error.value = e.message || '数据库初始化失败'
     loading.value = false
   }
+}
+
+// 检查数据库更新（每天一次）
+async function checkForDatabaseUpdate() {
+  try {
+    const result = await updateStore.autoCheckDatabaseUpdate(dbStore)
+    
+    if (result && result.hasUpdate) {
+      // 发现更新，显示通知
+      const localCount = dbStore.articleCount || 0
+      updateNotificationMessage.value = `发现数据库更新！${result.reason || ''}`
+      showUpdateNotification.value = true
+      
+      console.log('发现数据库更新:', result)
+    }
+  } catch (error) {
+    console.error('自动检查数据库更新失败:', error)
+    // 静默失败，不影响用户使用
+  }
+}
+
+// 关闭更新通知
+function closeUpdateNotification() {
+  showUpdateNotification.value = false
+}
+
+// 前往设置页面更新
+function goToSettings() {
+  showUpdateNotification.value = false
+  // 使用 router 跳转到设置页
+  window.location.hash = '#/settings'
 }
 
 function retry() {
@@ -216,5 +271,104 @@ body {
   font-family: 'Courier New', monospace;
   margin: 2px 0;
   word-break: break-all;
+}
+
+/* 更新通知 */
+.update-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: 90%;
+  max-width: 400px;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.notification-content {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.notification-icon {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+
+.notification-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.notification-desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.4;
+}
+
+.notification-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-update {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #667eea;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-update:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.btn-close {
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-close:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.3);
 }
 </style>

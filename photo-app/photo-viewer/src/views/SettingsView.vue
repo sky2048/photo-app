@@ -17,11 +17,38 @@
         
         <div class="setting-item">
           <div class="setting-info">
-            <div class="setting-title">更新数据库</div>
-            <div class="setting-desc">从 GitHub 重新下载最新数据库</div>
+            <div class="setting-title">数据库状态</div>
+            <div class="setting-desc">
+              {{ dbStore.isInitialized ? '✅ 已初始化' : '❌ 未初始化' }}
+              <span v-if="dbStore.articleCount > 0"> · {{ dbStore.articleCount }} 篇文章</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">检查数据库更新</div>
+            <div class="setting-desc" v-if="updateStore.dbUpdateInfo">
+              {{ updateStore.dbUpdateAvailable ? `🔄 发现更新 (${updateStore.dbUpdateInfo.reason})` : '✅ 已是最新' }}
+            </div>
+            <div class="setting-desc" v-else>点击检查是否有新数据</div>
           </div>
           <button 
             class="btn-primary" 
+            @click="handleCheckDbUpdate"
+            :disabled="updateStore.checkingDbUpdate"
+          >
+            {{ updateStore.checkingDbUpdate ? '检查中...' : '检查' }}
+          </button>
+        </div>
+        
+        <div class="setting-item" v-if="updateStore.dbUpdateAvailable">
+          <div class="setting-info">
+            <div class="setting-title">更新数据库</div>
+            <div class="setting-desc">下载最新数据库，重启后生效</div>
+          </div>
+          <button 
+            class="btn-primary btn-download" 
             @click="handleUpdateDb"
             :disabled="updating"
           >
@@ -33,15 +60,6 @@
           <div class="setting-info">
             <div class="setting-title">数据库地址</div>
             <div class="setting-desc">{{ dbUrl }}</div>
-          </div>
-        </div>
-
-        <div class="setting-item">
-          <div class="setting-info">
-            <div class="setting-title">数据库状态</div>
-            <div class="setting-desc">
-              {{ dbStore.isInitialized ? '✅ 已初始化' : '❌ 未初始化' }}
-            </div>
           </div>
         </div>
       </div>
@@ -120,6 +138,18 @@
     </div>
 
     <!-- 下载进度弹窗 -->
+    <div v-if="updating && dbStore.downloadProgress > 0" class="download-modal">
+      <div class="modal-content">
+        <div class="modal-title">正在下载数据库</div>
+        <div class="progress-bar">
+          <div class="progress-fill" :style="{ width: dbStore.downloadProgress + '%' }"></div>
+        </div>
+        <div class="progress-text">{{ dbStore.downloadProgress }}%</div>
+        <div class="modal-desc">请稍候，下载完成后重启应用生效</div>
+      </div>
+    </div>
+    
+    <!-- APK 下载进度弹窗 -->
     <div v-if="updateStore.downloading" class="download-modal">
       <div class="modal-content">
         <div class="modal-title">正在下载更新</div>
@@ -201,21 +231,49 @@ const dbUrl = computed(() => {
   return 'https://cdn.jsdelivr.net/gh/sky2048/photo-app@master/photo.db'
 })
 
+// 检查数据库更新
+async function handleCheckDbUpdate() {
+  try {
+    const result = await updateStore.checkDatabaseUpdate(dbStore)
+    
+    if (result) {
+      if (result.hasUpdate) {
+        alert(`发现数据库更新！\n\n原因: ${result.reason}\n\n点击下方"更新"按钮下载最新数据`)
+      } else {
+        alert('当前数据库已是最新版本')
+      }
+    } else {
+      alert('检查更新失败，请稍后重试')
+    }
+  } catch (error) {
+    alert('检查失败: ' + error.message)
+  }
+}
+
 async function handleUpdateDb() {
   if (updating.value) return
   
-  if (!confirm('确定要更新数据库吗？这将下载最新的数据。')) {
+  if (!confirm('确定要更新数据库吗？\n\n更新后需要重启应用才能生效。')) {
     return
   }
   
   updating.value = true
   
   try {
-    const success = await dbStore.updateDatabase()
-    if (success) {
-      alert('数据库更新成功！')
+    const result = await dbStore.updateDatabase()
+    
+    if (result.success) {
+      if (result.needRestart) {
+        alert('✅ 数据库更新成功！\n\n请重启应用以应用更新。')
+      } else {
+        alert('✅ 数据库更新成功！')
+        // Web 平台可能需要刷新页面
+        if (confirm('是否立即刷新页面？')) {
+          window.location.reload()
+        }
+      }
     } else {
-      alert('数据库更新失败，请重试')
+      alert('❌ 数据库更新失败\n\n' + (result.error || '未知错误'))
     }
   } catch (error) {
     alert('更新失败: ' + error.message)
