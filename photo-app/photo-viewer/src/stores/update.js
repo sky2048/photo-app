@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 
 export const useUpdateStore = defineStore('update', () => {
@@ -91,13 +90,7 @@ export const useUpdateStore = defineStore('update', () => {
     downloadProgress.value = 0
     
     try {
-      if (Capacitor.isNativePlatform()) {
-        // 原生平台：下载到本地并安装
-        await downloadAndInstallApk()
-      } else {
-        // Web 平台：使用 a 标签强制下载
-        downloadViaLink()
-      }
+      await downloadAndInstallApk()
     } catch (error) {
       console.error('下载失败:', error)
       alert('下载失败: ' + error.message)
@@ -107,18 +100,7 @@ export const useUpdateStore = defineStore('update', () => {
     }
   }
   
-  // Web 平台：使用 a 标签下载
-  function downloadViaLink() {
-    const link = document.createElement('a')
-    link.href = downloadUrl.value
-    link.download = apkFileName.value
-    link.target = '_blank'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
-  
-  // 原生平台：下载并安装 APK
+  // 下载并安装 APK
   async function downloadAndInstallApk() {
     try {
       // 使用 fetch 下载文件并监控进度
