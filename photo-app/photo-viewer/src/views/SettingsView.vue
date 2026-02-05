@@ -111,10 +111,23 @@
           <button 
             class="btn-primary btn-download" 
             @click="handleDownloadUpdate"
+            :disabled="updateStore.downloading"
           >
-            下载
+            {{ updateStore.downloading ? `${updateStore.downloadProgress}%` : '下载' }}
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- 下载进度弹窗 -->
+    <div v-if="updateStore.downloading" class="download-modal">
+      <div class="modal-content">
+        <div class="modal-title">正在下载更新</div>
+        <div class="progress-bar">
+          <div class="progress-fill" :style="{ width: updateStore.downloadProgress + '%' }"></div>
+        </div>
+        <div class="progress-text">{{ updateStore.downloadProgress }}%</div>
+        <div class="modal-desc">请稍候，下载完成后将自动安装</div>
       </div>
     </div>
 
@@ -229,9 +242,7 @@ async function handleCheckUpdate() {
 }
 
 function handleDownloadUpdate() {
-  if (confirm('确定要下载新版本吗？')) {
-    updateStore.downloadUpdate()
-  }
+  updateStore.downloadUpdate()
 }
 
 onMounted(() => {
@@ -505,5 +516,67 @@ onBeforeUnmount(() => {
 
 .nav-item.router-link-active .nav-label {
   font-weight: 700;
+}
+
+/* 下载进度弹窗 */
+.download-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  background: rgba(74, 95, 95, 0.95);
+  border-radius: 20px;
+  padding: 30px;
+  width: 80%;
+  max-width: 320px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.modal-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #ffffff;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8BC34A);
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+.progress-text {
+  font-size: 24px;
+  font-weight: 600;
+  color: #ffffff;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.modal-desc {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
 }
 </style>
