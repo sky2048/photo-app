@@ -138,9 +138,9 @@ export const useDbStore = defineStore('db', () => {
   async function checkDatabaseExists() {
     try {
       addLog('检查数据库文件...')
-      // 检查 databases 目录下的文件
+      // 尝试检查 databases 目录
       const result = await Filesystem.stat({
-        path: 'databases/photo.db',
+        path: '../databases/photo.db',
         directory: Directory.Data
       })
       addLog('数据库文件存在')
@@ -274,40 +274,29 @@ export const useDbStore = defineStore('db', () => {
         const base64Data = arrayBufferToBase64(arrayBuffer)
         addLog('Base64 转换完成')
         
-        // 关键：需要将数据库导入到 SQLite 插件的管理目录
-        addLog('准备导入数据库到 SQLite...')
-        
-        // 先删除旧数据库（如果存在）
-        const sqlite = new SQLiteConnection(CapacitorSQLite)
-        try {
-          await sqlite.closeConnection(dbName, false)
-          addLog('关闭旧连接')
-        } catch (e) {
-          addLog('无旧连接需关闭')
-        }
+        // 直接保存到 SQLite 的 databases 目录
+        // 使用相对路径 ../databases/ 从 files 目录跳到 databases 目录
+        addLog('保存到 databases 目录...')
         
         try {
-          await CapacitorSQLite.deleteDatabase({ database: dbName })
-          addLog('删除旧数据库')
+          await Filesystem.writeFile({
+            path: '../databases/photo.db',
+            data: base64Data,
+            directory: Directory.Data
+          })
+          addLog('数据库文件已保存到 databases 目录')
         } catch (e) {
-          addLog('无旧数据库需删除')
+          addLog('保存失败: ' + e.message)
+          // 如果失败，尝试另一种方式
+          addLog('尝试备用方案...')
+          await Filesystem.writeFile({
+            path: 'photo_downloaded.db',
+            data: base64Data,
+            directory: Directory.Data
+          })
+          addLog('已保存到备用位置')
         }
         
-        // 使用 importFromJson 方法导入
-        // 但这需要 JSON 格式，所以我们用另一种方法：
-        // 直接保存到 SQLite 的数据库目录
-        addLog('保存到 SQLite 数据目录...')
-        
-        // 在 Android 上，SQLite 数据库应该保存在特定位置
-        // 我们需要使用 Filesystem 的 writeFile，但路径要正确
-        await Filesystem.writeFile({
-          path: `databases/${dbName}.db`,
-          data: base64Data,
-          directory: Directory.Data,
-          recursive: true
-        })
-        
-        addLog('数据库文件已保存')
         downloadProgress.value = 100
         return
         
@@ -351,11 +340,11 @@ export const useDbStore = defineStore('db', () => {
         addLog('删除旧数据库...')
         try {
           await Filesystem.deleteFile({
-            path: 'databases/photo.db',
+            path: '../databases/photo.db',
             directory: Directory.Data
           })
         } catch (e) {
-          addLog('删除文件失败（可能不存在）: ' + e.message)
+          addLog('删除文件失败（可能不存在）')
         }
         
         // 重新下载
