@@ -80,12 +80,19 @@ export const useDbStore = defineStore('db', () => {
           addLog('创建数据库连接...')
           db.value = await sqlite.createConnection('photo', false, 'no-encryption', 1, false)
           addLog('连接创建成功')
+          
+          // 打开数据库
+          addLog('打开数据库...')
+          await db.value.open()
+          addLog('数据库打开成功')
+          
+          // 如果是首次创建，需要从下载的文件导入数据
+          if (!dbExists) {
+            addLog('导入下载的数据库...')
+            await importDownloadedDatabase()
+            addLog('数据导入完成')
+          }
         }
-        
-        // 打开数据库
-        addLog('打开数据库...')
-        await db.value.open()
-        addLog('数据库打开成功')
         
         // 测试查询
         try {
@@ -148,6 +155,64 @@ export const useDbStore = defineStore('db', () => {
     } catch (error) {
       addLog('数据库文件不存在')
       return false
+    }
+  }
+  
+  // 导入下载的数据库
+  async function importDownloadedDatabase() {
+    try {
+      // 获取下载文件的路径
+      const downloadedUri = await Filesystem.getUri({
+        path: 'photo_downloaded.db',
+        directory: Directory.Data
+      })
+      
+      const dbPath = downloadedUri.uri.replace('file://', '')
+      addLog('下载文件路径: ' + dbPath)
+      
+      // 使用 ATTACH 附加数据库
+      addLog('附加下载的数据库...')
+      await db.value.execute(`ATTACH DATABASE '${dbPath}' AS downloaded;`)
+      addLog('数据库附加成功')
+      
+      // 获取所有表
+      const tablesResult = await db.value.query(
+        "SELECT name FROM downloaded.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+        []
+      )
+      
+      addLog('找到表: ' + JSON.stringify(tablesResult))
+      
+      if (tablesResult.values && tablesResult.values.length > 0) {
+        for (const row of tablesResult.values) {
+          const tableName = row.name || row[0]
+          addLog('复制表: ' + tableName)
+          
+          // 获取表结构
+          const createTableResult = await db.value.query(
+            `SELECT sql FROM downloaded.sqlite_master WHERE type='table' AND name='${tableName}'`,
+            []
+          )
+          
+          if (createTableResult.values && createTableResult.values.length > 0) {
+            const createSql = createTableResult.values[0].sql || createTableResult.values[0][0]
+            addLog('创建表: ' + tableName)
+            await db.value.execute(createSql)
+            
+            // 复制数据
+            addLog('复制数据: ' + tableName)
+            await db.value.execute(`INSERT INTO ${tableName} SELECT * FROM downloaded.${tableName};`)
+          }
+        }
+      }
+      
+      // 分离数据库
+      await db.value.execute('DETACH DATABASE downloaded;')
+      addLog('数据库分离成功')
+      
+    } catch (error) {
+      addLog('导入失败: ' + error.message)
+      throw error
     }
   }
   
