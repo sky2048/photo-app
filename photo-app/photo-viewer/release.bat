@@ -42,7 +42,24 @@ if errorlevel 1 (
 )
 
 echo.
-echo [1/5] 检查是否有未提交的更改...
+echo [1/6] 更新 package.json 版本号...
+REM 去掉 v 前缀得到纯版本号
+set PURE_VERSION=%VERSION:v=%
+echo 版本号: %PURE_VERSION%
+
+REM 使用 PowerShell 更新 package.json
+powershell -Command "(Get-Content package.json) -replace '\"version\": \".*\"', '\"version\": \"%PURE_VERSION%\"' | Set-Content package.json"
+
+if errorlevel 1 (
+    echo ❌ 更新 package.json 失败
+    pause
+    exit /b 1
+)
+
+echo ✅ package.json 已更新为 %PURE_VERSION%
+
+echo.
+echo [2/6] 检查是否有未提交的更改...
 git status --short
 
 echo.
@@ -58,7 +75,7 @@ if /i "%COMMIT_FIRST%"=="y" (
 )
 
 echo.
-echo [2/5] 创建 tag: %VERSION%
+echo [3/6] 创建 tag: %VERSION%
 set /p TAG_MSG="请输入版本说明 (可选): "
 if "%TAG_MSG%"=="" (
     git tag %VERSION%
@@ -73,7 +90,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/5] 推送 tag 到 GitHub...
+echo [4/6] 推送 tag 到 GitHub...
 git push origin %VERSION%
 
 if errorlevel 1 (
@@ -88,11 +105,11 @@ echo.
 echo ✅ Tag 已推送！GitHub Actions 将自动构建 Release APK
 
 echo.
-echo [4/5] 等待 GitHub Actions 触发...
+echo [5/6] 等待 GitHub Actions 触发...
 timeout /t 3 /nobreak >nul
 
 echo.
-echo [5/5] 打开 GitHub 页面...
+echo [6/6] 打开 GitHub 页面...
 echo.
 echo 📦 Release 页面:
 echo https://github.com/sky2048/photo-app/releases
