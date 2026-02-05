@@ -7,7 +7,8 @@
     "hostname": "localhost",
     "allowNavigation": [
       "*"
-    ]
+    ],
+    "cleartext": true
   },
   "android": {
     "allowMixedContent": true,

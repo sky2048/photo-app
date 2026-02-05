@@ -47,6 +47,18 @@ jobs:
       working-directory: photo-app/photo-viewer
       run: npx cap sync android
       
+    - name: Add Android permissions
+      working-directory: photo-app/photo-viewer
+      run: |
+        # 添加必要的权限到 AndroidManifest.xml
+        sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />' android/app/src/main/AndroidManifest.xml
+        
+        # 添加 android:requestLegacyExternalStorage 到 application 标签
+        sed -i 's/<application/<application android:requestLegacyExternalStorage="true"/' android/app/src/main/AndroidManifest.xml
+        
+        # 允许明文流量（HTTP）
+        sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+      
     - name: Build Android APK
       working-directory: photo-app/photo-viewer/android
       run: ./gradlew assembleDebug --no-daemon
