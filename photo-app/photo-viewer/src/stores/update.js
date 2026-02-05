@@ -2,11 +2,9 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory } from '@capacitor/filesystem'
-import { Http } from '@capacitor-community/http'
-import { FileOpener } from '@capacitor-community/file-opener'
 
 export const useUpdateStore = defineStore('update', () => {
-  const currentVersion = ref(__APP_VERSION__ || '1.0.0') // 从构建时注入
+  const currentVersion = ref(typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0')
   const latestVersion = ref(null)
   const downloadUrl = ref(null)
   const updateAvailable = ref(false)
@@ -193,7 +191,24 @@ export const useUpdateStore = defineStore('update', () => {
   
   // 原生平台下载（真实进度）
   async function downloadUpdateNative() {
-    console.log('原生平台下载，使用 HTTP 插件')
+    console.log('原生平台下载')
+    
+    // 检查插件是否可用
+    let Http = null
+    let FileOpener = null
+    
+    try {
+      // 动态导入插件
+      const httpModule = await import('@capacitor-community/http')
+      const fileOpenerModule = await import('@capacitor-community/file-opener')
+      Http = httpModule.Http
+      FileOpener = fileOpenerModule.FileOpener
+    } catch (error) {
+      console.warn('插件未安装，降级到 Web 方式:', error)
+      // 降级到 iframe 下载
+      await downloadUpdateWeb()
+      return
+    }
     
     // 尝试使用 CDN 加速
     let downloadSuccess = false
