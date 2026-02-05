@@ -102,60 +102,66 @@ export const useUpdateStore = defineStore('update', () => {
   
   // 下载并安装 APK
   async function downloadAndInstallApk() {
-    try {
-      // 使用 fetch 下载文件并监控进度
-      const response = await fetch(downloadUrl.value)
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
       
-      if (!response.ok) {
-        throw new Error('下载失败')
-      }
+      xhr.open('GET', downloadUrl.value, true)
+      xhr.responseType = 'arraybuffer'
       
-      const contentLength = response.headers.get('content-length')
-      const total = parseInt(contentLength, 10)
-      let loaded = 0
-      
-      const reader = response.body.getReader()
-      const chunks = []
-      
-      while (true) {
-        const { done, value } = await reader.read()
-        
-        if (done) break
-        
-        chunks.push(value)
-        loaded += value.length
-        
-        if (total) {
-          downloadProgress.value = Math.round((loaded / total) * 100)
+      // 监听下载进度
+      xhr.onprogress = (event) => {
+        if (event.lengthComputable) {
+          downloadProgress.value = Math.round((event.loaded / event.total) * 100)
         }
       }
       
-      // 合并所有 chunks
-      const blob = new Blob(chunks)
-      const arrayBuffer = await blob.arrayBuffer()
-      const base64Data = arrayBufferToBase64(arrayBuffer)
+      // 下载完成
+      xhr.onload = async () => {
+        if (xhr.status === 200) {
+          try {
+            const arrayBuffer = xhr.response
+            const base64Data = arrayBufferToBase64(arrayBuffer)
+            
+            // 保存到本地
+            const fileName = apkFileName.value
+            await Filesystem.writeFile({
+              path: fileName,
+              data: base64Data,
+              directory: Directory.Cache
+            })
+            
+            // 获取文件 URI
+            const fileUri = await Filesystem.getUri({
+              path: fileName,
+              directory: Directory.Cache
+            })
+            
+            // 打开 APK 安装
+            window.open(fileUri.uri, '_system')
+            
+            resolve()
+          } catch (error) {
+            reject(error)
+          }
+        } else {
+          reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`))
+        }
+      }
       
-      // 保存到本地
-      const fileName = apkFileName.value
-      await Filesystem.writeFile({
-        path: fileName,
-        data: base64Data,
-        directory: Directory.Cache
-      })
+      // 下载失败
+      xhr.onerror = () => {
+        reject(new Error('网络错误，请检查网络连接'))
+      }
       
-      // 获取文件 URI
-      const fileUri = await Filesystem.getUri({
-        path: fileName,
-        directory: Directory.Cache
-      })
+      xhr.ontimeout = () => {
+        reject(new Error('下载超时'))
+      }
       
-      // 打开 APK 安装
-      window.open(fileUri.uri, '_system')
+      // 设置超时时间（5分钟）
+      xhr.timeout = 300000
       
-    } catch (error) {
-      console.error('下载或安装失败:', error)
-      throw error
-    }
+      xhr.send()
+    })
   }
   
   // 工具函数：ArrayBuffer 转 Base64
